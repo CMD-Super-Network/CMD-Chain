@@ -61,6 +61,7 @@ CMD Group will strongly support the development of CMD ecosystem:
 - Twitter: https://twitter.com/cmdofficial_
 - Medium: https://cdmfans.medium.com/
 - Telegram: https://t.me/joinchat/QQflZo3jezkxNTNl
+- Telegram: https://t.me/CMD_EN
 - YouTube: https://youtube.com/channel/UCEtmnUYO0RxImIO9UdjzYUQ
 - Reddit: https://www.reddit.com/u/cmdfans/
 
