@@ -53,13 +53,12 @@ import (
 	// "systemcontract"
 )
 
-
 var (
 	FrontierBlockReward       = big.NewInt(5e+18) // Block reward in wei for successfully mining a block
 	ByzantiumBlockReward      = big.NewInt(3e+18) // Block reward in wei for successfully mining a block upward from Byzantium
 	ConstantinopleBlockReward = big.NewInt(2e+18) // Block reward in wei for successfully mining a block upward from Constantinople
-	ValidatorReward 		  = big.NewInt(4e+17) // Block reward in wei for successfully mining a block upward from ValidatorReward
-	StakerReward 		  	  = big.NewInt(6e+17) // Block reward in wei for successfully mining a block upward from ValidatorReward
+	ValidatorReward           = big.NewInt(4e+17) // Block reward in wei for successfully mining a block upward from ValidatorReward
+	StakerReward              = big.NewInt(6e+17) // Block reward in wei for successfully mining a block upward from ValidatorReward
 	maxUncles                 = 2                 // Maximum number of uncles allowed in a single block
 	allowedFutureBlockTime    = 15 * time.Second  // Max time from current time allowed for blocks, before they're considered future blocks
 
@@ -642,8 +641,8 @@ func (c *Assembly) Finalize(chain consensus.ChainHeaderReader, header *types.Hea
 
 	// execute block reward tx.
 	// if len(*txs) > 0 {
-	
-	if c.chainConfig.RedCoastBlock == nil || c.chainConfig.RedCoastBlock.Cmp(header.Number) != 0{
+
+	if c.chainConfig.RedCoastBlock == nil || c.chainConfig.RedCoastBlock.Cmp(header.Number) != 0 {
 		if err := c.trySendBlockReward(chain, header, state); err != nil {
 			return err
 		}
@@ -667,7 +666,6 @@ func (c *Assembly) Finalize(chain consensus.ChainHeaderReader, header *types.Hea
 			return errInvalidExtraValidators
 		}
 	}
-
 
 	// No block rewards in PoA, so the state remains as is and uncles are dropped
 	// accumulateRewards(chain.Config(), state, header, uncles)
@@ -701,8 +699,8 @@ func (c *Assembly) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header
 
 	// deposit block reward if any tx exists.
 	// if len(txs) > 0 {
-		// trySendBlockReward
-	if c.chainConfig.RedCoastBlock == nil || c.chainConfig.RedCoastBlock.Cmp(header.Number) != 0 {	
+	// trySendBlockReward
+	if c.chainConfig.RedCoastBlock == nil || c.chainConfig.RedCoastBlock.Cmp(header.Number) != 0 {
 		if err := c.trySendBlockReward(chain, header, state); err != nil {
 			panic(err)
 		}
@@ -728,11 +726,9 @@ func (c *Assembly) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header
 // 	return c.abi[contractAddr].Pack(method)
 // }
 
-
 func (c *Assembly) trySendBlockReward(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
 
 	cmd := systemcontract.NewCMD()
-
 
 	method := "adjustRemainderMine"
 	data2, err2 := c.abi[systemcontract.CMDContractName].Pack(method)
@@ -746,79 +742,77 @@ func (c *Assembly) trySendBlockReward(chain consensus.ChainHeaderReader, header 
 	msg := types.NewMessage(header.Coinbase, systemcontract.GetCMDContractAddress(), nonce, new(big.Int), math.MaxUint64, new(big.Int), data2, true)
 	if _, _, err := caller.ExecuteMsg2(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
 		state.SubBalance(header.Coinbase, totalF)
-	}else{
+	} else {
 		state.SubBalance(header.Coinbase, totalF)
 	}
-			
-		totalFee := state.GetBalance(consensus.FeeRecoder)
-		fee := new(big.Int)
 
-		fee2 := new(big.Int)
+	totalFee := state.GetBalance(consensus.FeeRecoder)
+	fee := new(big.Int)
 
-		
-		vr, err := cmd.GetValidatorReward(state,header,newChainContext(chain,c),c.chainConfig)
-		if err != nil{
+	fee2 := new(big.Int)
+
+	vr, err := cmd.GetValidatorReward(state, header, newChainContext(chain, c), c.chainConfig)
+	if err != nil {
+		return err
+	}
+
+	mr, err := cmd.GetMinerReward(state, header, newChainContext(chain, c), c.chainConfig)
+	if err != nil {
+		return err
+	}
+
+	if vr.Cmp(common.Big0) > 0 {
+		if totalFee.Cmp(common.Big0) > 0 {
+			b := new(big.Int).Mul(big.NewInt(10), totalFee)
+			cc := new(big.Int).Quo(b, big.NewInt(100))
+			fee = new(big.Int).Add(cc, vr)
+			b = new(big.Int).Sub(totalFee, cc)
+			fee2 = new(big.Int).Add(b, mr)
+		} else {
+			fee = vr
+			fee2 = mr
+		}
+		// Miner will send tx to deposit block fees to contract, add to his balance first.
+		state.AddBalance(header.Coinbase, fee)
+
+		state.SetBalance(consensus.FeeRecoder, common.Big0)
+		method := "distributeBlockReward"
+		data2, err2 := c.abi[systemcontract.ValidatorsContractName].Pack(method)
+		if err2 != nil {
+			log.Error("Can't pack data for distributeBlockReward", "err2", err2)
+			return err2
+		}
+		nonce := state.GetNonce(header.Coinbase)
+		msg := types.NewMessage(header.Coinbase, systemcontract.GetValidatorAddr(header.Number, c.chainConfig), nonce, fee, math.MaxUint64, new(big.Int), data2, true)
+		if _, err := caller.ExecuteMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
 			return err
 		}
 
-		mr, err := cmd.GetMinerReward(state,header,newChainContext(chain,c),c.chainConfig)
-		if err != nil{
+		state.AddBalance(header.Coinbase, fee2)
+
+		state.SetBalance(consensus.FeeRecoder, common.Big0)
+
+		method = "mint"
+		data2, err2 = c.abi[systemcontract.MinerContractName].Pack(method)
+		if err2 != nil {
+			log.Error("Can't pack data for mint", "err2", err2)
+			return err2
+		}
+		nonce = state.GetNonce(header.Coinbase)
+		msg = types.NewMessage(header.Coinbase, &systemcontract.MinerContractAddr, nonce, fee2, math.MaxUint64, new(big.Int), data2, true)
+		if _, err = caller.ExecuteMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
+			fmt.Println(err)
 			return err
 		}
-	
-	if vr.Cmp(common.Big0)>0 {
-			if totalFee.Cmp(common.Big0) > 0 {
-				b := new(big.Int).Mul(big.NewInt(10),totalFee)
-				cc := new(big.Int).Quo(b,big.NewInt(100))
-				fee = new(big.Int).Add(cc,vr)
-				b = new(big.Int).Sub(totalFee,cc)
-				fee2 = new(big.Int).Add(b,mr)
-			}else{
-				fee = vr
-				fee2 = mr
-			}
-			// Miner will send tx to deposit block fees to contract, add to his balance first.
-			state.AddBalance(header.Coinbase, fee)
-
-			state.SetBalance(consensus.FeeRecoder, common.Big0)
-			method := "distributeBlockReward"
-			data2, err2 := c.abi[systemcontract.ValidatorsContractName].Pack(method)
-			if err2 != nil {
-				log.Error("Can't pack data for distributeBlockReward", "err2", err2)
-				return err2
-			}
-			nonce := state.GetNonce(header.Coinbase)
-			msg := types.NewMessage(header.Coinbase, systemcontract.GetValidatorAddr(header.Number, c.chainConfig), nonce, fee, math.MaxUint64, new(big.Int), data2, true)
-			if _, err := caller.ExecuteMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
-				return err
-			}
-
-			state.AddBalance(header.Coinbase, fee2)
-
-			state.SetBalance(consensus.FeeRecoder, common.Big0)
-
-			method = "mint"
-			data2, err2 = c.abi[systemcontract.MinerContractName].Pack(method)
-			if err2 != nil {
-				log.Error("Can't pack data for mint", "err2", err2)
-				return err2
-			}
-			nonce = state.GetNonce(header.Coinbase)
-			msg = types.NewMessage(header.Coinbase, &systemcontract.MinerContractAddr, nonce, fee2, math.MaxUint64, new(big.Int), data2, true)
-			if _, err = caller.ExecuteMsg(msg, state, header, newChainContext(chain, c), c.chainConfig); err != nil {
-				fmt.Println(err)
-				return err
-			}
 
 		release := systemcontract.NewRelease()
 
-		release.Trigger(state,header,newChainContext(chain,c),c.chainConfig)
-	
+		release.Trigger(state, header, newChainContext(chain, c), c.chainConfig)
+
 	}
-	
+
 	return nil
 }
-
 
 func (c *Assembly) tryPunishValidator(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
 	number := header.Number.Uint64()
@@ -880,7 +874,7 @@ func (c *Assembly) initializeSystemContracts(chain consensus.ChainHeaderReader, 
 		addr    common.Address
 		packFun func() ([]byte, error)
 	}{
-		
+
 		{systemcontract.ValidatorsContractAddr, func() ([]byte, error) {
 			return c.abi[systemcontract.ValidatorsContractName].Pack(method, genesisValidators)
 		}},
@@ -888,10 +882,10 @@ func (c *Assembly) initializeSystemContracts(chain consensus.ChainHeaderReader, 
 		{systemcontract.ProposalAddr, func() ([]byte, error) {
 			return c.abi[systemcontract.ProposalContractName].Pack(method, genesisValidators)
 		}},
-		{systemcontract.MinerContractAddr,func()([]byte,error) {
+		{systemcontract.MinerContractAddr, func() ([]byte, error) {
 			return c.abi[systemcontract.MinerContractName].Pack(method)
-			
-		}},		
+
+		}},
 	}
 
 	for _, contract := range contracts {
@@ -1202,7 +1196,6 @@ func (c *Assembly) IsSysTransaction(tx *types.Transaction, header *types.Header)
 	return false, nil
 }
 
-
 func (c *Assembly) CanCreate(state consensus.StateReader, addr common.Address, height *big.Int) bool {
 	// if c.chainConfig.IsRedCoast(height) && c.config.EnableDevVerification {
 	// 	if isDeveloperVerificationEnabled(state) {
@@ -1214,7 +1207,6 @@ func (c *Assembly) CanCreate(state consensus.StateReader, addr common.Address, h
 	// }
 	return true
 }
-
 
 // ValidateTx do a consensus-related validation on the given transaction at the given header and state.
 // the parentState must be the state of the header's parent block.
@@ -1234,6 +1226,9 @@ func (c *Assembly) PreHandle(chain consensus.ChainHeaderReader, header *types.He
 	if c.chainConfig.RedCoastBlock != nil && c.chainConfig.RedCoastBlock.Cmp(header.Number) == 0 {
 		return systemcontract.ApplySystemContractUpgrade(state, header, newChainContext(chain, c), c.chainConfig)
 	}
+	if c.chainConfig.RedCoastV3Block != nil && c.chainConfig.RedCoastV3Block.Cmp(header.Number) == 0 {
+		return systemcontract.ApplySystemContractUpgrade2(state, header, newChainContext(chain, c), c.chainConfig)
+	}
 	return nil
 }
 
@@ -1243,14 +1238,13 @@ func (c *Assembly) PreHandle(chain consensus.ChainHeaderReader, header *types.He
 // 	return crypto.Keccak256Hash(addr.Hash().Bytes(), p)
 // }
 
-
 func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, uncles []*types.Header) {
 	// Select the correct block reward based on chain progression
 	blockReward := ValidatorReward
 	// Accumulate the rewards for the miner and any included uncles
 	reward := new(big.Int).Set(blockReward)
 	state.AddBalance(header.Coinbase, reward)
-	
+
 	// state.AddBalance(common.HexToAddress("832b07D30Caab0db459AA66ac14c4fbF4df1124a"),reward)
 }
 

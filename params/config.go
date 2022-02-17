@@ -55,6 +55,7 @@ var (
 		IstanbulBlock:       big.NewInt(0),
 		MuirGlacierBlock:    nil,
 		RedCoastBlock:       big.NewInt(240200),
+		RedCoastV3Block:     big.NewInt(4900000),
 
 		Congress: &CongressConfig{
 			Period: 3,
@@ -80,6 +81,7 @@ var (
 		MuirGlacierBlock:    nil,
 		YoloV1Block:         big.NewInt(0),
 		RedCoastBlock:       big.NewInt(233600),
+		RedCoastV3Block:     big.NewInt(4900000),
 		Congress: &CongressConfig{
 			Period: 3,
 			Epoch:  200,
@@ -94,7 +96,7 @@ var (
 	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil,
 		false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0),
 		big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0),
-		nil, nil, nil, nil, new(EthashConfig), nil, nil}
+		nil, nil, nil, big.NewInt(0), big.NewInt(0), new(EthashConfig), nil, nil}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
@@ -104,18 +106,18 @@ var (
 	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil,
 		false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0),
 		big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0),
-		nil, nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil}
+		nil, nil, nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil}
 
 	// AllCongressProtocolChanges copies from AllCliqueProtocolChanges.
 	AllCongressProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil,
 		false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0),
 		big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0),
-		nil, nil, nil, big.NewInt(0), nil, nil, &CongressConfig{Period: 0, Epoch: 30000}}
+		nil, nil, nil, big.NewInt(0), big.NewInt(0), nil, nil, &CongressConfig{Period: 0, Epoch: 30000}}
 
 	TestChainConfig = &ChainConfig{big.NewInt(1), big.NewInt(0), nil, false,
 		big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0),
 		big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0),
-		nil, nil, nil, nil, new(EthashConfig), nil, nil}
+		nil, nil, nil, nil, nil, new(EthashConfig), nil, nil}
 	TestRules = TestChainConfig.Rules(new(big.Int))
 )
 
@@ -192,6 +194,8 @@ type ChainConfig struct {
 
 	RedCoastBlock *big.Int `json:"redCoastBlock,omitempty"` // RedCoast switch block (nil = no fork, 0 = already activated)
 
+	RedCoastV3Block *big.Int `json:"redCoastV3Block,omitempty"`
+
 	// Various consensus engines
 	Ethash   *EthashConfig   `json:"ethash,omitempty"`
 	Clique   *CliqueConfig   `json:"clique,omitempty"`
@@ -243,7 +247,7 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, YOLO v1: %v, RedCoastBlock: %v, Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, YOLO v1: %v, RedCoastBlock: %v, RedCoastV3Block: %v, Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -258,6 +262,7 @@ func (c *ChainConfig) String() string {
 		c.MuirGlacierBlock,
 		c.YoloV1Block,
 		c.RedCoastBlock,
+		c.RedCoastV3Block,
 		engine,
 	)
 }
@@ -329,6 +334,10 @@ func (c *ChainConfig) IsRedCoast(num *big.Int) bool {
 	return isForked(c.RedCoastBlock, num)
 }
 
+func (c *ChainConfig) IsRedCoastV3(num *big.Int) bool {
+	return isForked(c.RedCoastV3Block, num)
+}
+
 // CheckCompatible checks whether scheduled fork transitions have been imported
 // with a mismatching chain configuration.
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *ConfigCompatError {
@@ -370,6 +379,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "muirGlacierBlock", block: c.MuirGlacierBlock, optional: true},
 		{name: "yoloV1Block", block: c.YoloV1Block, optional: true},
 		{name: "redCoastBlock", block: c.RedCoastBlock},
+		{name: "redCoastV3Block", block: c.RedCoastV3Block},
 	} {
 		if lastFork.name != "" {
 			// Next one must be higher number
@@ -441,6 +451,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *Confi
 	}
 	if isForkIncompatible(c.RedCoastBlock, newcfg.RedCoastBlock, head) {
 		return newCompatError("RedCoast fork block", c.RedCoastBlock, newcfg.RedCoastBlock)
+	}
+	if isForkIncompatible(c.RedCoastV3Block, newcfg.RedCoastV3Block, head) {
+		return newCompatError("RedCoastV3 fork block", c.RedCoastV3Block, newcfg.RedCoastV3Block)
 	}
 	return nil
 }
